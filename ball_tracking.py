@@ -1,105 +1,114 @@
+# importing required libraries 
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from sympy import * 
 
+# reading video
 cap = cv2.VideoCapture('ball.mov')
 
 if (cap.isOpened()== False): 
   print("Error opening video stream or file")
 
-
+# function to mask the ball in the frame
 def ball_tracking(img):
+    # convert the RBG frame to a HSV frame
     img_hsv=cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    # HSV threshold limits to mask ball
     lower_red = np.array([0,170, 130]) 
     upper_red = np.array([255,255,185]) 
     mask = cv2.inRange(img_hsv, lower_red, upper_red)
-    kernel = np.ones((5,5),np.uint8)
+
+    # Erode to reduce noise
+    kernel = np.ones((3,3),np.uint8)
     erosion = cv2.erode(mask,kernel,iterations = 1)
-    # kernel = np.ones((5,5),np.float32)/25
-    # dst = cv2.filter2D(img,-1,kernel)
-    # dest_and = cv2.bitwise_and(img, img, mask = mask)
-
     return erosion
-points = []
-A = []
-def least_square_fit(x_points, y_points):
-    for x in x_points:
-        A.append([x*x, x, 1])
-    a = np.matrix(A) 
-    b = np.matrix(y_points)
-    print(a.shape)
-    print(b.shape)
-    # x = np.linalg.inv(np.transpose(a) @ a) @ np.transpose(a) @ b
-    # q = 
-    # x = np.linalg.inv(np.transpose(a).dot(a)).dot(np.transpose).dot(b)
 
-    x = np.matmul(np.matmul(np.linalg.inv(np.matmul(np.transpose(a), a)), np.transpose(a)), np.transpose(b))
-    
-    print(x.shape)
+# functiom to find the least sqaure fit
+def least_square_fit(x_points, y):
+    A = []
+    for x in x_points:
+        A.append([x**2, x, 1])
+    A = np.matrix(A)
+    B = np.matrix(y)
+
+    x = np.matmul(np.matmul(np.linalg.inv(np.matmul(np.transpose(A), A)), np.transpose(A)), np.transpose(B))
     return x
+
+def find_y(x, coeff):
+    a, b, c = np.array(coeff).flatten()
+    y = a*pow(x,2) + b*x + c
+    return y
+
 X = []
 Y = []
-# print(points)
+
+# reads each frame
 while(cap.isOpened()):
     ret, frame = cap.read()
     if ret == True:
+        # scaling to 75% of the frame size
         scale_percent = 75 
         width = int(frame.shape[1] * scale_percent / 100)
         height = int(frame.shape[0] * scale_percent / 100)
-        dim = (width, height)
-        
+        dim = (width, height)        
         img = cv2.resize(frame, dim, interpolation = cv2.INTER_AREA)
-        img = ball_tracking(img)       
 
-        points = np.where(img != 0)
-        x_points = points[1]
-        y_points = points[0]
+        masked_img = ball_tracking(img)       
+
+        # find the ball coordinates in the frame
+        ball_points = np.where(masked_img != 0)
+        x_points = ball_points[1]
+        y_points = ball_points[0]
 
         try:
-            # if x_points != None :
+            # find the center of the masked ball
             x_center = (max(x_points) + min(x_points)) // 2
             y_center = (max(y_points) + min(y_points)) // 2
-            # print(x_center, y_center)
-            plt.scatter(x_center, y_center)
-            # if abs(x_points[len(x_points)-1] - x_center) <= 100:
-            # points.append([x_center, y_center]) 
+
+            # plot found center points of ball in each frame
+            # plt.scatter(x_center, y_center, label="Center point of the ball") 
+            #plt.scatter(X, Y)
             if x_center != None:
                 X.append(x_center)
                 Y.append(y_center)
 
-            
-            # if abs(y_points[len(y_points)-1] - y_center) <= 100:
-            # Y.append(y_center) 
-            # print(x_center, y_center)
-            # cv2.circle(img, (x_center, y_center), 2, (255, 255, 255), -1)
+            # display the trajectory in the frame 
+            for i in range(len(X)):
+                cv2.circle(img, (X[i], Y[i]), 1, (255, 255, 255), -1)   
         except:
             pass
-        # print(points[-1])
-        # for point in points:
-        #     x, y = point
-        #     cv2.circle(img, (x, y), 1, (255, 255, 255), -1)    
-        # cv2.imshow('Frame', img)
-        # if cv2.waitKey(25) & 0xFF == ord('q'):
-        #     break
- 
-    else: 
-        break
+        
+        # Display each frame
+        cv2.imshow('Frame', img)
+        # press 'q' to exit the window
+        if cv2.waitKey(25) & 0xFF == ord('q'):
+            break
 
-# for point in points:
-#     x, y = point
-#     X.append(x)
-#     Y.append(y)
-#     cv2.circle(img, (x, y), 1, (255, 255, 255), -1)    
+
+
 coeff = least_square_fit(X, Y)
+print('y = (%.4f) * x**2 + (%.4f) * x + (%.4f)' % (coeff[0], coeff[1], coeff[2]))
 
-# print(coeff)
-coeff = np.array(coeff).flatten()
-print(coeff)
+# find y values in the trajectory
 x = np.array(X)
-print("X SHAPE: ",x.shape)
-y = coeff[0]*pow(x,2) + coeff[1]*x + coeff[2]
-# plt.plot(x_points, y_points)
-plt.plot(x,y)
+y = find_y(x, coeff)
+
+# find y at x=300
+print("When x = 300, y will be: ", find_y(300, coeff))
+ 
+# plot the best fit parabola
+plt.title('Trajectory of the ball')
+plt.xlabel("X-Coordinate")
+plt.ylabel("Y-Coordinate")
+plt.legend(loc="upper left")
+
+plt.scatter(X, Y, label="Center point of the ball") 
+plt.plot(x,y, label="Best fit curve")
+
 plt.show()
+
+# close all the frames
+cv2.destroyAllWindows()
 cap.release()
